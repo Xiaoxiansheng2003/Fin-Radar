@@ -1,7 +1,7 @@
 ---
 name: Fin-Radar
 description: 金融雷达 - 财报智能解析与风险预警系统，基于本地规则引擎从财报文本中提取关键财务指标并进行风险评估
-version: 1.2.0
+version: 1.2.1
 author: Xiaoxiansheng2003
 tags: finance, risk-analysis, financial-report, local-analysis
 category: 金融分析
