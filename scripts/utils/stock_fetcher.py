@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-stock_fetcher.py - 东方财富 A 股实时数据抓取模块
-================================================
-数据来源：东方财富网公开行情页面及公开 API
+stock_fetcher.py - A 股实时数据抓取模块（多源容错）
+====================================================
+数据来源：东方财富网、新浪财经（备用）
+自动降级：东方财富 → 新浪财经，确保服务可用性。
 仅用于获取公开的金融行情数据，不涉及任何大模型服务。
 """
 
@@ -44,6 +45,13 @@ class StockFetcher:
         "Referer": "https://quote.eastmoney.com/",
     }
 
+    # 新浪财经备用接口
+    SINA_QUOTE_URL = "https://hq.sinajs.cn/list="
+    SINA_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://finance.sina.com.cn/",
+    }
+
     def __init__(self):
         if not HAS_REQUESTS:
             logger.warning("requests 库未安装，请执行: pip install requests")
@@ -71,6 +79,87 @@ class StockFetcher:
             return (0, code)  # 北交所
         else:
             return (1, code)  # 默认上海
+
+    def _fetch_realtime_sina(self, stock_code: str) -> Dict[str, Any]:
+        """
+        新浪财经备用接口 - 当东方财富接口不可用时自动降级
+
+        Args:
+            stock_code: 股票代码
+
+        Returns:
+            Dict: 行情数据（字段名与东方财富接口保持一致）
+        """
+        market, code = self._parse_stock_code(stock_code)
+        prefix = "sh" if market == 1 else "sz"
+        sina_code = f"{prefix}{code}"
+
+        try:
+            resp = requests.get(
+                f"{self.SINA_QUOTE_URL}{sina_code}",
+                headers=self.SINA_HEADERS,
+                timeout=10
+            )
+            resp.raise_for_status()
+
+            # 解析新浪行情格式：var hq_str_sz300308="名称,今开,昨收,当前,最高,最低,..."
+            match = re.search(r'"(.+)"', resp.text)
+            if not match:
+                return {"success": False, "error": "新浪接口返回数据为空"}
+
+            data = match.group(1).split(",")
+            if len(data) < 10:
+                return {"success": False, "error": "新浪接口数据不完整"}
+
+            name = data[0]
+            open_price = float(data[1]) if data[1] else None
+            prev_close = float(data[2]) if data[2] else None
+            current = float(data[3]) if data[3] else None
+            high = float(data[4]) if data[4] else None
+            low = float(data[5]) if data[5] else None
+            volume = float(data[8]) if data[8] else None  # 成交量（股）
+            amount = float(data[9]) if data[9] else None  # 成交额
+
+            change_pct = None
+            change_amt = None
+            if current and prev_close and prev_close > 0:
+                change_pct = round((current - prev_close) / prev_close * 100, 2)
+                change_amt = round(current - prev_close, 2)
+
+            result = {
+                "success": True,
+                "source": "新浪财经（备用）",
+                "code": code,
+                "name": name,
+                "price": current,
+                "change_pct": change_pct,
+                "change_amt": change_amt,
+                "open": open_price,
+                "high": high,
+                "low": low,
+                "prev_close": prev_close,
+                "volume": round(volume / 100) if volume else None,  # 转为手
+                "amount": amount,
+                "turnover_rate": None,
+                "amplitude": None,
+                "volume_ratio": None,
+                "pe_ttm": None,
+                "pe_static": None,
+                "pe_dynamic": None,
+                "pb": None,
+                "total_market_cap": None,
+                "circulating_market_cap": None,
+                "eps": None,
+                "industry": "",
+            }
+
+            if amount:
+                result["amount_yi"] = round(amount / 1e8, 2)
+
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": f"新浪备用接口也失败: {e}"}
 
     def fetch_realtime_quote(self, stock_code: str) -> Dict[str, Any]:
         """
@@ -174,9 +263,11 @@ class StockFetcher:
             return result
 
         except requests.RequestException as e:
-            return {"success": False, "error": f"请求失败: {e}"}
+            logger.warning(f"东方财富接口失败: {e}，尝试新浪备用接口...")
+            return self._fetch_realtime_sina(stock_code)
         except (KeyError, ValueError, json.JSONDecodeError) as e:
-            return {"success": False, "error": f"数据解析失败: {e}"}
+            logger.warning(f"东方财富数据解析失败: {e}，尝试新浪备用接口...")
+            return self._fetch_realtime_sina(stock_code)
 
     def fetch_financial_history(self, stock_code: str, periods: int = 4) -> Dict[str, Any]:
         """
@@ -408,6 +499,7 @@ class StockFetcher:
             }
 
         except Exception as e:
+            logger.warning(f"东方财富公告接口失败: {e}")
             return {"success": False, "error": f"获取公告失败: {e}"}
 
     # 公告关键事件关键词分类表
@@ -710,11 +802,12 @@ class StockFetcher:
         lines = []
         lines.append("=" * 60)
         lines.append("Fin-Radar 市场数据报告")
-        lines.append("数据来源：东方财富网（公开行情数据）")
         lines.append("=" * 60)
 
         # 1. 实时行情
         quote = self.fetch_realtime_quote(stock_code)
+        source = quote.get("source", "东方财富网") if quote.get("success") else "数据获取失败"
+        lines.append(f"数据来源：{source}")
         if quote.get("success"):
             lines.append(f"\n【实时行情】")
             lines.append("-" * 40)
@@ -734,16 +827,16 @@ class StockFetcher:
             if quote.get("amount_yi"):
                 lines.append(f"成交额: {quote['amount_yi']} 亿元")
 
-            lines.append(f"换手率: {quote.get('turnover_rate', '-')}%  振幅: {quote.get('amplitude', '-')}%  量比: {quote.get('volume_ratio', '-')}")
+            lines.append(f"换手率: {quote.get('turnover_rate') or '-'}%  振幅: {quote.get('amplitude') or '-'}%  量比: {quote.get('volume_ratio') or '-'}")
 
             # 估值指标
             lines.append(f"\n【估值指标】")
             lines.append("-" * 40)
-            lines.append(f"市盈率(动): {quote.get('pe_dynamic', '-')}")
-            lines.append(f"市盈率(TTM): {quote.get('pe_ttm', '-')}")
-            lines.append(f"市盈率(静): {quote.get('pe_static', '-')}")
-            lines.append(f"市净率: {quote.get('pb', '-')}")
-            lines.append(f"每股收益: {quote.get('eps', '-')}")
+            lines.append(f"市盈率(动): {quote.get('pe_dynamic') or '-'}")
+            lines.append(f"市盈率(TTM): {quote.get('pe_ttm') or '-'}")
+            lines.append(f"市盈率(静): {quote.get('pe_static') or '-'}")
+            lines.append(f"市净率: {quote.get('pb') or '-'}")
+            lines.append(f"每股收益: {quote.get('eps') or '-'}")
 
             if quote.get("total_market_cap_yi"):
                 lines.append(f"总市值: {quote['total_market_cap_yi']} 亿元")
