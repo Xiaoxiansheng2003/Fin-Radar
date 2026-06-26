@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "metrics": {
+    "company_name": "示例科技股份有限公司",
+    "report_period": "2023年",
+    "revenue": 8560000000.0,
+    "net_profit": 820000000.0,
+    "debt_ratio": 62.8,
+    "operating_cash_flow": 530000000.0,
+    "rd_ratio": 5.6,
+    "revenue_yoy": 12.3,
+    "net_profit_yoy": -15.6
+  },
+  "risk_assessment": {
+    "risk_level": "medium",
+    "risk_score": 30,
+    "risk_summary": "发现部分风险指标，需持续关注",
+    "risk_details": [
+      {
+        "risk_type": "负债风险",
+        "status": "medium",
+        "description": "资产负债率 62.8% 偏高",
+        "suggestion": "建议持续关注负债变化趋势"
+      },
+      {
+        "risk_type": "盈利风险",
+        "status": "medium",
+        "description": "净利润同比下滑 15.6%",
+        "suggestion": "建议关注公司盈利能力变化趋势"
+      }
+    ]
+  }
+}

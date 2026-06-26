@@ -1,0 +1,8 @@
+# 金融智能 Skill - 依赖清单
+
+# PDF 解析库
+pdfplumber>=0.10.0
+PyPDF2>=3.0.0
+
+# 行情数据抓取（--stock 功能需要）
+requests>=2.28.0
