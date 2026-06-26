@@ -684,9 +684,9 @@ def main():
         logging.getLogger().setLevel(logging.ERROR)
     
     # 检查输入
-    if not args.pdf and not args.text and not args.file:
+    if not args.pdf and not args.text and not args.file and not args.stock:
         parser.print_help()
-        print("\n错误: 请提供 --pdf、--text 或 --file 参数")
+        print("\n错误: 请提供 --pdf、--text、--file 或 --stock 参数")
         sys.exit(1)
     
     # 初始化提取器
@@ -704,16 +704,14 @@ def main():
             
             fetcher = StockFetcher()
             if args.json:
-                # JSON 输出
-                quote = fetcher.fetch_realtime_quote(args.stock)
-                finance = fetcher.fetch_financial_history(args.stock)
-                industry = fetcher.fetch_industry_peers(args.stock)
-                ann = fetcher.fetch_announcements(args.stock, limit=5)
+                # JSON 输出 - 包含全部数据
                 result = {
-                    "quote": quote,
-                    "financial_history": finance,
-                    "industry_comparison": industry,
-                    "announcements": ann,
+                    "quote": fetcher.fetch_realtime_quote(args.stock),
+                    "financial_history": fetcher.fetch_financial_history(args.stock),
+                    "industry_comparison": fetcher.fetch_industry_peers(args.stock),
+                    "announcement_analysis": fetcher.analyze_announcements(args.stock),
+                    "peer_comparison": fetcher.analyze_peers_comparison(args.stock),
+                    "credit_assessment": fetcher.generate_credit_assessment(args.stock),
                 }
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             else:
